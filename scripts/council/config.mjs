@@ -36,7 +36,7 @@ export const JUDGE_MODEL = "anthropic/claude-sonnet-4.6";
 
 // Safety / scope limits — keep the daily change small and reviewable.
 export const MAX_PROPOSAL_WORDS = 120;
-export const MAX_FILES_PER_CHANGE = 2;
+export const MAX_FILES_PER_CHANGE = 3;
 
 // Files/folders the council is NOT allowed to touch, ever.
 export const PROTECTED_PATHS = [
