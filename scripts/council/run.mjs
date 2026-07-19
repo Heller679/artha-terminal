@@ -61,7 +61,7 @@ async function main() {
 
   // ── 4. Implementation ──────────────────────────────────────────────
   console.log("Round 4: implementation...");
-  const implementation = await implement(winner, repoSnapshot);
+  let implementation = await implement(winner, repoSnapshot);
   logRound("4-implementation", [implementation]);
 
   if (!implementation.files || implementation.files.length === 0) {
@@ -73,13 +73,29 @@ async function main() {
   console.log("Round 5: review...");
   const reviewerMember =
     COUNCIL.find((m) => m.id !== winner.id) ?? COUNCIL[0];
-  const review = await review_(reviewerMember, winner, implementation);
+  let review = await review_(reviewerMember, winner, implementation);
   logRound("5-review", [review]);
 
-  await writeSummary({ proposals, debates, verdict, implementation, review });
+  // ── 5b. Revise round — if the reviewer found a problem, give the
+  // original author ONE chance to fix it, then re-review the fix. ──
+  let revision = null;
+  if (!review.approved) {
+    console.log(`Reviewer found an issue: ${review.reason}`);
+    console.log("Round 5b: author revising to address the feedback...");
+    revision = await revise(winner, implementation, review);
+
+    if (revision.files && revision.files.length > 0) {
+      implementation = revision; // use the fixed version from here on
+      console.log("Round 5c: re-reviewing the revised change...");
+      review = await review_(reviewerMember, winner, implementation);
+      logRound("5c-rereview", [review]);
+    }
+  }
+
+  await writeSummary({ proposals, debates, verdict, implementation, review, revision });
 
   if (!review.approved) {
-    console.log(`Reviewer rejected the change: ${review.reason}`);
+    console.log(`Reviewer still rejects the change after one revision: ${review.reason}`);
     return;
   }
 
@@ -175,6 +191,17 @@ async function review_(reviewer, winner, implementation) {
   return callModelJSON(reviewer.model, system, user);
 }
 
+async function revise(winner, implementation, review) {
+  const member = COUNCIL.find((m) => m.id === winner.id);
+  const system = `You are ${winner.label}. A reviewer found a problem with the code you wrote. Fix ONLY the problem they raised — do not add new features or change the scope. Return complete, corrected file contents, not diffs. Never touch package.json, vite.config.ts, or anything under .github/ or scripts/council/.`;
+  const filesText = implementation.files
+    .map((f) => `--- ${f.path} ---\n${f.content}`)
+    .join("\n\n");
+  const user = `Your change: "${winner.title}" — ${winner.rationale}\n\nYour current code:\n${filesText}\n\nThe reviewer rejected it for this reason:\n"${review.reason}"\n\nFix it. Reply as JSON: {"files": [{"path": string, "content": string}], "commitMessage": string}`;
+
+  return callModelJSON(member.model, system, user);
+}
+
 // ── Safety & utility ─────────────────────────────────────────────────────
 
 function applySafetyChecks(files) {
@@ -234,7 +261,7 @@ async function logRound(name, data) {
   );
 }
 
-async function writeSummary({ proposals, debates, verdict, implementation, review }) {
+async function writeSummary({ proposals, debates, verdict, implementation, review, revision }) {
   const lines = [];
   lines.push(`# AI Council — ${today}\n`);
   lines.push(`## Proposals\n`);
@@ -260,8 +287,12 @@ async function writeSummary({ proposals, debates, verdict, implementation, revie
     lines.push(`Files: ${implementation.files.map((f) => f.path).join(", ")}`);
     lines.push(`Commit message: ${implementation.commitMessage}`);
   }
+  if (revision) {
+    lines.push(`\n## Revision (author fixed reviewer's feedback)\n`);
+    lines.push(`Commit message: ${revision.commitMessage}`);
+  }
   if (review) {
-    lines.push(`\n## Review\n`);
+    lines.push(`\n## Final Review\n`);
     lines.push(
       review.approved
         ? `✅ Approved by reviewer — ${review.reason}`
