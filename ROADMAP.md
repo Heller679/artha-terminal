@@ -21,6 +21,30 @@ text "Coming soon." Nothing else — no data fetching yet. The ONLY goal of
 this step is: the tab appears in the nav, clicking it shows the placeholder
 section, and the site builds. Make sure it's actually reachable by the user.
 
+EXACT WIRING for this codebase (the navigation spans several files — you
+MUST edit all of these, or the tab won't appear):
+
+1. src/sections/GlobalSection.tsx (NEW FILE): export a React component named
+   `GlobalSection` that renders a heading "Global Macro" and text
+   "Coming soon." Match the styling style of existing sections.
+
+2. src/sections/CommandPalette.tsx: the `View` type is a union of tab names
+   like "feed" | "markets" | ... — add "global" to it. Also add a new entry
+   ["global", "Global Macro"] to the Sections list array that maps view keys
+   to labels.
+
+3. src/sections/Chrome.tsx: there is a `NAV` array of { key, label, icon }.
+   Add an entry { key: "global", label: "Global", icon: Globe } and import
+   `Globe` from "lucide-react" alongside the other icon imports. This makes
+   the tab appear in BOTH the LeftRail (desktop) and MobileNav (mobile),
+   which both map over NAV.
+
+4. src/App.tsx: import GlobalSection from "@/sections/GlobalSection", and add
+   a render block alongside the other `{view === "..." && <... />}` blocks:
+   `{view === "global" && <GlobalSection />}`.
+
+Do NOT remove or alter any existing tab, view, or nav entry. Only ADD.
+
 ### Step 2 — show a static list of source names
 In the Global section, replace "Coming soon" with a simple hardcoded list of
 the world news SOURCES you plan to use later (just their names as text, e.g.
