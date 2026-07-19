@@ -221,8 +221,15 @@ async function judge(proposals, debates) {
 
 async function implement(winner, repoSnapshot) {
   const member = COUNCIL.find((m) => m.id === winner.id);
-  const system = `You are ${winner.label}, implementing YOUR OWN winning proposal for a React + TypeScript + Vite project. Write complete, working file contents — not diffs, not snippets. Keep the change small and scoped to what you proposed. Never touch package.json, vite.config.ts, or anything under .github/ or scripts/council/.`;
-  const user = `Your proposal: "${winner.title}" — ${winner.rationale}\nTarget files you suggested: ${JSON.stringify(winner.targetFiles)}\n\nRepo structure (partial):\n${repoSnapshot}\n\nReply as JSON: {"files": [{"path": string, "content": string}], "commitMessage": string}`;
+
+  // Read the existing code the model needs to see: the files it plans to
+  // edit, plus the key files new sections must integrate with (nav, App).
+  const integration = await keyIntegrationFiles();
+  const toRead = [...(winner.targetFiles ?? []), ...integration];
+  const existingCode = await readSourceFiles(toRead);
+
+  const system = `You are ${winner.label}, implementing YOUR OWN winning proposal for a React + TypeScript + Vite project. You are shown the ACTUAL current contents of the relevant files. Base your change on this real code — do not invent function names, imports, props, or tabs that aren't there. When adding a new tab/section, PRESERVE every existing tab and section; add to them, never replace or remove them. Write complete, working file contents — not diffs. Never touch package.json, vite.config.ts, or anything under .github/ or scripts/council/.`;
+  const user = `Your proposal: "${winner.title}" — ${winner.rationale}\nTarget files you suggested: ${JSON.stringify(winner.targetFiles)}\n\nRepo structure (partial):\n${repoSnapshot}\n\nActual current contents of the relevant files:\n${existingCode}\n\nReply as JSON: {"files": [{"path": string, "content": string}], "commitMessage": string}`;
 
   return callModelJSON(member.model, system, user);
 }
@@ -348,6 +355,67 @@ async function buildRepoSnapshot() {
     `src/lib/: ${lib.join(", ")}`,
   ].join("\n");
 }
+
+// Reads the actual contents of a set of source files so the implementing
+// model can SEE the existing code instead of guessing. Only reads files
+// under src/ (or the allowed tsconfig files), skips anything missing, and
+// caps total size so we never blow past the model's context window.
+async function readSourceFiles(relPaths) {
+  const MAX_TOTAL = 60_000; // characters across all files
+  const MAX_PER_FILE = 20_000;
+  const seen = new Set();
+  const chunks = [];
+  let total = 0;
+
+  for (const rel of relPaths) {
+    const normalized = rel.replace(/^\.?\//, "");
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    // only read inside src/ or the allowed config files
+    if (!normalized.startsWith("src/") && !ALLOWED_OUTSIDE_SRC.includes(normalized)) {
+      continue;
+    }
+    if (normalized.includes("..")) continue;
+
+    const full = path.join(REPO_ROOT, normalized);
+    let content;
+    try {
+      content = await readFile(full, "utf8");
+    } catch {
+      continue; // file doesn't exist (e.g. a brand-new file) — skip
+    }
+    if (content.length > MAX_PER_FILE) {
+      content = content.slice(0, MAX_PER_FILE) + "\n/* ...truncated... */";
+    }
+    if (total + content.length > MAX_TOTAL) break;
+    total += content.length;
+    chunks.push(`--- ${normalized} ---\n${content}`);
+  }
+
+  return chunks.length ? chunks.join("\n\n") : "(no existing file contents available)";
+}
+
+// The files a new/edited section almost always needs to integrate with,
+// so the model can see how tabs and navigation are wired before editing.
+async function keyIntegrationFiles() {
+  const candidates = [
+    "src/App.tsx",
+    "src/sections/Chrome.tsx",
+    "src/sections/Header.tsx",
+  ];
+  const existing = [];
+  for (const c of candidates) {
+    try {
+      await readFile(path.join(REPO_ROOT, c), "utf8");
+      existing.push(c);
+    } catch {
+      /* skip missing */
+    }
+  }
+  return existing;
+}
+
 
 async function safeReaddir(dir) {
   try {
