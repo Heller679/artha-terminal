@@ -17,6 +17,7 @@ import {
   MAX_PROPOSAL_WORDS,
   MAX_FILES_PER_CHANGE,
   PROTECTED_PATHS,
+  ALLOWED_OUTSIDE_SRC,
 } from "./config.mjs";
 import { callModel, callModelJSON } from "./openrouter.mjs";
 
@@ -328,7 +329,7 @@ function applySafetyChecks(files) {
     if (PROTECTED_PATHS.some((p) => normalized.startsWith(p))) {
       return { ok: false, reason: `Protected path touched: ${file.path}` };
     }
-    if (!normalized.startsWith("src/")) {
+    if (!normalized.startsWith("src/") && !ALLOWED_OUTSIDE_SRC.includes(normalized)) {
       return { ok: false, reason: `Change outside src/: ${file.path}` };
     }
   }
