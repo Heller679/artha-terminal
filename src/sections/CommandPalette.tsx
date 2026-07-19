@@ -1,7 +1,7 @@
 import { Command } from "cmdk";
 import { ENTITIES } from "@/lib/entities";
 
-export type View = "feed" | "markets" | "research" | "chanakya" | "calendar" | "watchlist";
+export type View = "feed" | "markets" | "research" | "chanakya" | "calendar" | "watchlist" | "global";
 
 export function CommandPalette({
   open,
@@ -33,6 +33,7 @@ export function CommandPalette({
               {(
                 [
                   ["feed", "News feed"],
+                  ["global", "Global Macro — world market-moving news"],
                   ["markets", "Markets toolkit"],
                   ["research", "Research Desk — Kimi's picks & deep dives"],
                   ["chanakya", "Chanakya Watch — speculation lab"],
