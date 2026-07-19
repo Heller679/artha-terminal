@@ -5,7 +5,11 @@
 // commits that to a branch and opens a Pull Request.
 
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
+
+const execAsync = promisify(exec);
 import {
   COUNCIL,
   JUDGE_MODEL,
@@ -69,48 +73,88 @@ async function main() {
     return;
   }
 
-  // ── 5. Independent review ──────────────────────────────────────────
+  // ── 5. Independent review (AI reads the code) ──────────────────────
   console.log("Round 5: review...");
   const reviewerMember =
     COUNCIL.find((m) => m.id !== winner.id) ?? COUNCIL[0];
   let review = await review_(reviewerMember, winner, implementation);
   logRound("5-review", [review]);
 
-  // ── 5b. Revise round — if the reviewer found a problem, give the
-  // original author ONE chance to fix it, then re-review the fix. ──
+  // If the reviewer flags something, let the author fix it once before
+  // we even try to build.
   let revision = null;
   if (!review.approved) {
     console.log(`Reviewer found an issue: ${review.reason}`);
     console.log("Round 5b: author revising to address the feedback...");
     revision = await revise(winner, implementation, review);
-
     if (revision.files && revision.files.length > 0) {
-      implementation = revision; // use the fixed version from here on
+      implementation = revision;
       console.log("Round 5c: re-reviewing the revised change...");
       review = await review_(reviewerMember, winner, implementation);
       logRound("5c-rereview", [review]);
     }
   }
 
-  await writeSummary({ proposals, debates, verdict, implementation, review, revision });
-
   if (!review.approved) {
     console.log(`Reviewer still rejects the change after one revision: ${review.reason}`);
+    await writeSummary({ proposals, debates, verdict, implementation, review, revision, buildResult: null });
     return;
   }
 
-  // ── 6. Apply the change to disk (only if it passes safety checks) ──
-  const safe = applySafetyChecks(implementation.files);
+  // ── 6. Safety checks before we ever write to disk ──────────────────
+  let safe = applySafetyChecks(implementation.files);
   if (!safe.ok) {
     console.log(`Safety check blocked the change: ${safe.reason}`);
+    await writeSummary({ proposals, debates, verdict, implementation, review, revision, buildResult: null });
     return;
   }
 
+  // ── 7. Build-verify loop — actually try to build the site. If it
+  // fails, feed the real error messages back to the author to fix.
+  // Repeat up to MAX_BUILD_ATTEMPTS times. ──────────────────────────
+  const MAX_BUILD_ATTEMPTS = 3;
+  let buildResult = null;
+  let buildPassed = false;
+
+  for (let attempt = 1; attempt <= MAX_BUILD_ATTEMPTS; attempt++) {
+    console.log(`Round 6.${attempt}: writing files and running real build...`);
+    const backups = await writeFilesWithBackup(implementation.files);
+    buildResult = await runBuild();
+
+    if (buildResult.ok) {
+      console.log(`Build passed on attempt ${attempt}.`);
+      buildPassed = true;
+      break;
+    }
+
+    console.log(`Build failed on attempt ${attempt}. Restoring files and asking author to fix.`);
+    await restoreBackups(backups); // put the repo back before trying again
+
+    if (attempt < MAX_BUILD_ATTEMPTS) {
+      const fixed = await fixBuildError(winner, implementation, buildResult.errors);
+      if (!fixed.files || fixed.files.length === 0) {
+        console.log("Author returned no fix, giving up.");
+        break;
+      }
+      const fixedSafe = applySafetyChecks(fixed.files);
+      if (!fixedSafe.ok) {
+        console.log(`Fixed version failed safety check: ${fixedSafe.reason}`);
+        break;
+      }
+      implementation = fixed;
+    }
+  }
+
+  await writeSummary({ proposals, debates, verdict, implementation, review, revision, buildResult });
+
+  if (!buildPassed) {
+    console.log("Change could not be made to build after several attempts. Nothing will be committed.");
+    return;
+  }
+
+  // Files are already written to disk (from the successful build attempt).
   for (const file of implementation.files) {
-    const fullPath = path.join(REPO_ROOT, file.path);
-    await mkdir(path.dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, file.content, "utf8");
-    console.log(`Wrote ${file.path}`);
+    console.log(`Kept ${file.path}`);
   }
 
   // Signal to the GitHub Actions workflow what happened, via a small
@@ -202,6 +246,73 @@ async function revise(winner, implementation, review) {
   return callModelJSON(member.model, system, user);
 }
 
+async function fixBuildError(winner, implementation, errors) {
+  const member = COUNCIL.find((m) => m.id === winner.id);
+  const system = `You are ${winner.label}. Your code change was written to a real React + TypeScript + Vite project and the build FAILED. Fix the code so the build passes. The errors are real compiler/build output — read them carefully. Common causes: importing a function or member that does not exist, wrong prop types, missing imports, typos. Return complete corrected file contents. Only touch files under src/. Never touch package.json, vite.config.ts, .github/, or scripts/council/.`;
+  const filesText = implementation.files
+    .map((f) => `--- ${f.path} ---\n${f.content}`)
+    .join("\n\n");
+  const user = `Your change: "${winner.title}"\n\nYour current code:\n${filesText}\n\nThe build failed with these errors:\n${errors}\n\nFix the code so it builds. Reply as JSON: {"files": [{"path": string, "content": string}], "commitMessage": string}`;
+
+  return callModelJSON(member.model, system, user);
+}
+
+// ── Build running & file backup ──────────────────────────────────────────
+
+// Writes each proposed file, saving the previous content (or marking it as
+// newly created) so we can restore the repo if the build fails.
+async function writeFilesWithBackup(files) {
+  const backups = [];
+  for (const file of files) {
+    const fullPath = path.join(REPO_ROOT, file.path);
+    let previous = null;
+    let existed = true;
+    try {
+      previous = await readFile(fullPath, "utf8");
+    } catch {
+      existed = false;
+    }
+    backups.push({ fullPath, previous, existed });
+    await mkdir(path.dirname(fullPath), { recursive: true });
+    await writeFile(fullPath, file.content, "utf8");
+  }
+  return backups;
+}
+
+async function restoreBackups(backups) {
+  const { unlink } = await import("node:fs/promises");
+  for (const b of backups) {
+    if (b.existed) {
+      await writeFile(b.fullPath, b.previous, "utf8");
+    } else {
+      try {
+        await unlink(b.fullPath);
+      } catch {
+        /* nothing to remove */
+      }
+    }
+  }
+}
+
+// Runs the real production build. Returns {ok, errors}.
+async function runBuild() {
+  try {
+    await execAsync("npm run build", {
+      cwd: REPO_ROOT,
+      maxBuffer: 20 * 1024 * 1024,
+      timeout: 5 * 60 * 1000, // 5 minute cap
+    });
+    return { ok: true, errors: "" };
+  } catch (e) {
+    // stdout+stderr contain the TypeScript / Vite error messages we want
+    // to feed back to the model.
+    const out = `${e.stdout ?? ""}\n${e.stderr ?? ""}`.trim();
+    // keep only the last chunk so we don't overwhelm the model's context
+    const trimmed = out.length > 6000 ? out.slice(-6000) : out;
+    return { ok: false, errors: trimmed || String(e).slice(0, 2000) };
+  }
+}
+
 // ── Safety & utility ─────────────────────────────────────────────────────
 
 function applySafetyChecks(files) {
@@ -261,7 +372,7 @@ async function logRound(name, data) {
   );
 }
 
-async function writeSummary({ proposals, debates, verdict, implementation, review, revision }) {
+async function writeSummary({ proposals, debates, verdict, implementation, review, revision, buildResult }) {
   const lines = [];
   lines.push(`# AI Council — ${today}\n`);
   lines.push(`## Proposals\n`);
@@ -292,11 +403,19 @@ async function writeSummary({ proposals, debates, verdict, implementation, revie
     lines.push(`Commit message: ${revision.commitMessage}`);
   }
   if (review) {
-    lines.push(`\n## Final Review\n`);
+    lines.push(`\n## Review\n`);
     lines.push(
       review.approved
         ? `✅ Approved by reviewer — ${review.reason}`
         : `❌ Rejected by reviewer — ${review.reason}`
+    );
+  }
+  if (buildResult) {
+    lines.push(`\n## Build check\n`);
+    lines.push(
+      buildResult.ok
+        ? `✅ The site builds successfully with this change.`
+        : `❌ The change could not be made to build. Nothing was committed.`
     );
   }
   await mkdir(LOG_DIR, { recursive: true });
