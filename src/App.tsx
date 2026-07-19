@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Header } from "@/sections/Header";
 import { TickerStrip } from "@/sections/TickerStrip";
 import { NewsFeed } from "@/sections/NewsFeed";
+import { GlobalSection } from "@/sections/GlobalSection";
 import { ChanakyaWatch } from "@/sections/Chanakya";
 import { CalendarView } from "@/sections/CalendarView";
 import { WatchlistView } from "@/sections/WatchlistView";
@@ -237,6 +238,7 @@ function App() {
               onOpenStock={setStockTicker}
             />
           )}
+          {view === "global" && <GlobalSection />}
           {view === "markets" && (
             <div className="p-3 md:p-5">
               <div className="mb-4 flex w-fit gap-1 rounded-lg border border-hairline bg-surface p-1">
