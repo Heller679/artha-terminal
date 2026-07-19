@@ -1,0 +1,79 @@
+name: AI Council — Daily Improvement
+
+on:
+  schedule:
+    # Runs at 09:00 UTC every day. Adjust the cron if you want a different time.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  council:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run the AI council
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: node scripts/council/run.mjs
+
+      - name: Check if a change was produced
+        id: check
+        run: |
+          if [ -f .council-result.json ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read council result
+        if: steps.check.outputs.changed == 'true'
+        id: result
+        run: |
+          {
+            echo "title<<EOF"
+            node -e "console.log(JSON.parse(require('fs').readFileSync('.council-result.json')).title)"
+            echo "EOF"
+            echo "author<<EOF"
+            node -e "console.log(JSON.parse(require('fs').readFileSync('.council-result.json')).author)"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify the site still builds
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          npm install
+          npm run build
+
+      - name: Commit council logs and proposed change
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "ai-council-bot"
+          git config user.email "ai-council-bot@users.noreply.github.com"
+          BRANCH="ai-council/$(date +%Y-%m-%d)"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "AI Council: ${{ steps.result.outputs.title }} (by ${{ steps.result.outputs.author }})"
+          git push origin "$BRANCH"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Open Pull Request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "AI Council: ${{ steps.result.outputs.title }}" \
+            --body "Proposed by **${{ steps.result.outputs.author }}**, debated and reviewed by the rest of the council. See \`council-logs/\` for the full transcript of the discussion. Verified: the site builds successfully with this change." \
+            --head "$BRANCH" \
+            --base main
