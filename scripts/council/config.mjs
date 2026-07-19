@@ -48,6 +48,15 @@ export const PROTECTED_PATHS = [
   ".gitignore",
 ];
 
+// Normally the council may only change files under src/. These specific
+// files outside src/ are also allowed, because adding a new TypeScript
+// section sometimes needs a small touch here. Anything NOT under src/ and
+// NOT on this list is still blocked. The real build check is the safety net.
+export const ALLOWED_OUTSIDE_SRC = [
+  "tsconfig.app.json",
+  "tsconfig.json",
+];
+
 // A short description of the project, given to every model as context.
 export const PROJECT_CONTEXT = `
 Artha Terminal is a React + TypeScript + Vite web app: an India market
