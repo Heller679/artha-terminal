@@ -1,8 +1,9 @@
-import { Rss, BarChart3, Eye, CalendarDays, Star, Telescope } from "lucide-react";
+import { Rss, BarChart3, Eye, CalendarDays, Star, Telescope, Globe } from "lucide-react";
 import type { View } from "./CommandPalette";
 
 const NAV: { key: View; label: string; icon: typeof Rss }[] = [
   { key: "feed", label: "Feed", icon: Rss },
+  { key: "global", label: "Global", icon: Globe },
   { key: "markets", label: "Markets", icon: BarChart3 },
   { key: "research", label: "Research", icon: Telescope },
   { key: "chanakya", label: "Chanakya", icon: Eye },
