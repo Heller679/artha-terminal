@@ -1,0 +1,254 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============ ARTHA TERMINAL — design tokens (single source of truth) ============ */
+:root {
+  --bg: #0c0e13;
+  --panel: #12151d;
+  --card: #171b26;
+  --line: #232a38;
+  --text: #e9ecf4;
+  --muted: #97a0b5;
+  --accent: #f2a93b;
+  --bull: #29c46f;
+  --bear: #e5484d;
+  --gold: #d9b45b;
+  --spec: #8b7ef8;
+  --radius: 10px;
+
+  /* shadcn bridge (hsl triplets) */
+  --background: 222 26% 6%;
+  --foreground: 222 30% 94%;
+  --card-h: 224 24% 12%;
+  --card-foreground: 222 30% 94%;
+  --popover: 224 24% 10%;
+  --popover-foreground: 222 30% 94%;
+  --primary: 37 88% 59%;
+  --primary-foreground: 222 26% 8%;
+  --secondary: 224 20% 16%;
+  --secondary-foreground: 222 30% 94%;
+  --muted-h: 224 20% 16%;
+  --muted-foreground: 222 16% 65%;
+  --accent-h: 224 20% 18%;
+  --accent-foreground: 222 30% 94%;
+  --destructive: 359 75% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 22% 18%;
+  --input: 220 22% 18%;
+  --ring: 37 88% 59%;
+}
+
+.light {
+  --bg: #f4f2ec;
+  --panel: #eceadf;
+  --card: #ffffff;
+  --line: #d8d4c6;
+  --text: #181b22;
+  --muted: #5d6473;
+  --accent: #b97a12;
+  --bull: #0e8a4a;
+  --bear: #c22e33;
+  --gold: #8a6d24;
+  --spec: #5a4bd6;
+
+  --background: 45 30% 94%;
+  --foreground: 222 22% 12%;
+  --card-h: 0 0% 100%;
+  --card-foreground: 222 22% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 22% 12%;
+  --primary: 37 82% 40%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 45 20% 88%;
+  --secondary-foreground: 222 22% 12%;
+  --muted-h: 45 20% 88%;
+  --muted-foreground: 220 10% 40%;
+  --accent-h: 45 25% 85%;
+  --accent-foreground: 222 22% 12%;
+  --border: 45 18% 78%;
+  --input: 45 18% 78%;
+  --ring: 37 82% 40%;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Archivo", Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-family: "Instrument Serif", Georgia, serif;
+}
+.font-mono-num {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* hairlines */
+.hairline {
+  border-color: var(--line);
+}
+
+/* scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* focus rings */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ============ motion (150–250ms ease-out; respect reduced motion) ============ */
+@keyframes tick-flash-bull {
+  0% {
+    background-color: color-mix(in srgb, var(--bull) 14%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes tick-flash-bear {
+  0% {
+    background-color: color-mix(in srgb, var(--bear) 14%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash-bull {
+  animation: tick-flash-bull 600ms ease-out;
+}
+.flash-bear {
+  animation: tick-flash-bear 600ms ease-out;
+}
+
+@keyframes shimmer-slide {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--card) 100%, transparent) 25%,
+    color-mix(in srgb, var(--line) 70%, transparent) 50%,
+    var(--card) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes fade-in-item {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-in-item {
+  animation: fade-in-item 250ms ease-out both;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--bull) 55%, transparent);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+.live-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes spin-refresh {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-refresh {
+  animation: spin-refresh 800ms linear infinite;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.ticker-track {
+  animation: ticker-scroll 60s linear infinite;
+}
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-bull,
+  .flash-bear,
+  .fade-in-item,
+  .skeleton,
+  .live-dot,
+  .ticker-track {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* number change transition base */
+.transition-colors-150 {
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+
+/* thin divider label */
+.section-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
